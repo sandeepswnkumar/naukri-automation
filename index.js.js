@@ -1,141 +1,582 @@
+import fs from "fs/promises";
 import puppeteer from "puppeteer";
-
-const USER_EMAIL = process.env.NAUKRI_EMAIL;
-const USER_PASSWORD = process.env.NAUKRI_PASSWORD;
-
-
-if (!USER_EMAIL || !USER_PASSWORD) {
-    logStep("NAUKRI_EMAIL or NAUKRI_PASSWORD is missing.")
-    throw new Error("NAUKRI_EMAIL or NAUKRI_PASSWORD is missing.");
-}
 
 function logStep(message) {
     console.log(`[${new Date().toISOString()}] ${message}`);
 }
 
+const USER_EMAIL = process.env.NAUKRI_EMAIL;
+const USER_PASSWORD = process.env.NAUKRI_PASSWORD;
+
+if (!USER_EMAIL || !USER_PASSWORD) {
+    logStep("NAUKRI_EMAIL or NAUKRI_PASSWORD is missing.");
+    throw new Error("NAUKRI_EMAIL or NAUKRI_PASSWORD is missing.");
+}
+
+/**
+ * Save screenshot and HTML for debugging.
+ */
+async function saveDebugFiles(page, name) {
+    try {
+        await page.screenshot({
+            path: `${name}.png`,
+            fullPage: true
+        });
+
+        const html = await page.content();
+
+        await fs.writeFile(
+            `${name}.html`,
+            html,
+            "utf8"
+        );
+
+        logStep(`Debug files saved: ${name}.png and ${name}.html`);
+    } catch (error) {
+        logStep(`Unable to save debug files: ${error.message}`);
+    }
+}
+
+/**
+ * Wait for an element.
+ */
+async function waitForElement(page, selector, timeout = 15000) {
+    try {
+        const element = await page.waitForSelector(selector, {
+            visible: true,
+            timeout
+        });
+
+        return element;
+    } catch (error) {
+        logStep(`Element not found: ${selector}`);
+        return null;
+    }
+}
+
+/**
+ * Wait for an element and click it.
+ */
+async function waitAndClick(page, selector, timeout = 15000) {
+    const element = await waitForElement(
+        page,
+        selector,
+        timeout
+    );
+
+    if (!element) {
+        return false;
+    }
+
+    await element.click();
+
+    return true;
+}
+
+/**
+ * Main Naukri automation.
+ */
 async function uploadResume() {
 
-    logStep("Starting resume upload workflow.");
+    logStep("Starting Naukri profile automation.");
+
     let browser;
 
     try {
+
+        // --------------------------------------------------
+        // 1. Launch browser
+        // --------------------------------------------------
+
         logStep("Launching browser.");
+
         browser = await puppeteer.launch({
             headless: true,
             args: [
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage"
+                "--disable-dev-shm-usage",
+                "--disable-gpu"
             ]
         });
+
         logStep("Browser launched.");
 
+        // --------------------------------------------------
+        // 2. Create page
+        // --------------------------------------------------
+
         logStep("Creating browser page.");
+
         const page = await browser.newPage();
+
         logStep("Browser page created.");
 
+        // Optional but useful for consistent rendering
+        await page.setViewport({
+            width: 1366,
+            height: 768
+        });
+
+        // --------------------------------------------------
+        // 3. Open Naukri
+        // --------------------------------------------------
+
         logStep("Opening Naukri home page.");
+
         await page.goto("https://www.naukri.com/", {
             waitUntil: "domcontentloaded",
             timeout: 60000
         });
+
         logStep(`Naukri home page loaded: ${page.url()}`);
 
+        // --------------------------------------------------
+        // 4. Wait for login layer
+        // --------------------------------------------------
+
         logStep("Waiting for the login layer.");
-        await page.waitForSelector('#login_Layer', { visible: true });
-        logStep("Opening the login layer.");
-        await page.click('#login_Layer');
+
+        const loginLayer = await waitForElement(
+            page,
+            "#login_Layer",
+            30000
+        );
+
+        if (!loginLayer) {
+
+            logStep(
+                "Login layer was not found. Saving debug information."
+            );
+
+            await saveDebugFiles(
+                page,
+                "naukri-login-debug"
+            );
+
+            throw new Error(
+                "Naukri login layer (#login_Layer) was not found."
+            );
+        }
+
+        // --------------------------------------------------
+        // 5. Open login
+        // --------------------------------------------------
+
+        logStep("Opening login layer.");
+
+        await loginLayer.click();
+
         logStep("Login layer opened.");
 
-        const emailSelector = 'input[placeholder="Enter your active Email ID / Username"]';
+        // --------------------------------------------------
+        // 6. Email
+        // --------------------------------------------------
+
+        const emailSelector =
+            'input[placeholder="Enter your active Email ID / Username"]';
+
         logStep("Waiting for the email field.");
-        await page.waitForSelector(emailSelector, { visible: true });
-        await page.type(emailSelector, USER_EMAIL);
+
+        const emailInput = await waitForElement(
+            page,
+            emailSelector,
+            15000
+        );
+
+        if (!emailInput) {
+
+            await saveDebugFiles(
+                page,
+                "naukri-email-debug"
+            );
+
+            throw new Error(
+                "Naukri email input was not found."
+            );
+        }
+
+        await emailInput.type(USER_EMAIL);
+
         logStep("Email entered.");
 
-        const passwordSelector = 'input[placeholder="Enter your password"]';
+        // --------------------------------------------------
+        // 7. Password
+        // --------------------------------------------------
+
+        const passwordSelector =
+            'input[placeholder="Enter your password"]';
+
         logStep("Waiting for the password field.");
-        await page.waitForSelector(passwordSelector, { visible: true });
-        await page.type(passwordSelector, USER_PASSWORD);
+
+        const passwordInput = await waitForElement(
+            page,
+            passwordSelector,
+            15000
+        );
+
+        if (!passwordInput) {
+
+            await saveDebugFiles(
+                page,
+                "naukri-password-debug"
+            );
+
+            throw new Error(
+                "Naukri password input was not found."
+            );
+        }
+
+        await passwordInput.type(USER_PASSWORD);
+
         logStep("Password entered.");
 
-        const loginButtonSelector = 'button.loginButton';
+        // --------------------------------------------------
+        // 8. Login
+        // --------------------------------------------------
+
+        const loginButtonSelector =
+            "button.loginButton";
+
         logStep("Waiting for the login button.");
-        await page.waitForSelector(loginButtonSelector, { visible: true });
-        logStep("Submitting login and waiting for navigation.");
+
+        const loginButton = await waitForElement(
+            page,
+            loginButtonSelector,
+            15000
+        );
+
+        if (!loginButton) {
+
+            await saveDebugFiles(
+                page,
+                "naukri-login-button-debug"
+            );
+
+            throw new Error(
+                "Naukri login button was not found."
+            );
+        }
+
+        logStep("Submitting login.");
+
         await Promise.all([
-            page.click(loginButtonSelector),
-            page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {
-                logStep("Login did not trigger a full page navigation; continuing.");
+            loginButton.click(),
+
+            page.waitForNavigation({
+                waitUntil: "networkidle2",
+                timeout: 30000
+            }).catch(() => {
+                logStep(
+                    "Login did not trigger full page navigation."
+                );
             })
         ]);
-        logStep(`Login submitted. Current URL: ${page.url()}`);
 
-        logStep("Checking for the profile page or an OTP/CAPTCHA step.");
-        await page.waitForSelector('.view-profile-wrapper, .nudge-container, .resume-upload', { timeout: 15000 }).catch(() => {
-            logStep("Profile selector was not found; OTP/CAPTCHA may be present.");
-        });
+        logStep(
+            `Login submitted. Current URL: ${page.url()}`
+        );
 
-        logStep("Opening the profile page directly.");
-        await page.goto("https://www.naukri.com/mnjuser/profile", {
-            waitUntil: "networkidle2"
-        });
-        logStep(`Profile page loaded: ${page.url()}`);
+        // --------------------------------------------------
+        // 9. Wait after login
+        // --------------------------------------------------
 
-        logStep("Waiting for the resume headline edit control.");
-        await page.waitForSelector('#lazyResumeHead .edit.icon', { timeout: 15000 }).catch(() => {
-            logStep("Resume headline edit control was not found; OTP/CAPTCHA may be present.");
-        });
-        logStep("Opening resume headline editor.");
-        await page.click('#lazyResumeHead .edit.icon');
-        logStep("Resume headline editor opened.");
+        logStep("Waiting for login processing.");
 
-        logStep("Waiting for the resume headline save button.");
-        await page.waitForSelector("form[name='resumeHeadlineForm'] button[type='submit']", { timeout: 15000 }).catch(() => {
-            logStep("Resume headline save button was not found; OTP/CAPTCHA may be present.");
-        });
-        logStep("Waiting for the editor to finish loading.");
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        await new Promise(resolve =>
+            setTimeout(resolve, 3000)
+        );
+
+        // --------------------------------------------------
+        // 10. Open profile directly
+        // --------------------------------------------------
+
+        logStep("Opening Naukri profile page.");
+
+        await page.goto(
+            "https://www.naukri.com/mnjuser/profile",
+            {
+                waitUntil: "networkidle2",
+                timeout: 60000
+            }
+        );
+
+        logStep(
+            `Profile page loaded: ${page.url()}`
+        );
+
+        // --------------------------------------------------
+        // 11. Resume headline edit button
+        // --------------------------------------------------
+
+        const resumeEditSelector =
+            "#lazyResumeHead .edit.icon";
+
+        logStep(
+            "Waiting for resume headline edit control."
+        );
+
+        const resumeEditButton = await waitForElement(
+            page,
+            resumeEditSelector,
+            20000
+        );
+
+        if (!resumeEditButton) {
+
+            await saveDebugFiles(
+                page,
+                "naukri-profile-debug"
+            );
+
+            throw new Error(
+                "Resume headline edit control was not found."
+            );
+        }
+
+        logStep(
+            "Opening resume headline editor."
+        );
+
+        await resumeEditButton.click();
+
+        logStep(
+            "Resume headline editor opened."
+        );
+
+        // --------------------------------------------------
+        // 12. Resume headline save button
+        // --------------------------------------------------
+
+        const saveHeadlineSelector =
+            "form[name='resumeHeadlineForm'] button[type='submit']";
+
+        logStep(
+            "Waiting for resume headline save button."
+        );
+
+        const saveHeadlineButton = await waitForElement(
+            page,
+            saveHeadlineSelector,
+            15000
+        );
+
+        if (!saveHeadlineButton) {
+
+            await saveDebugFiles(
+                page,
+                "naukri-headline-editor-debug"
+            );
+
+            throw new Error(
+                "Resume headline save button was not found."
+            );
+        }
+
+        // --------------------------------------------------
+        // 13. Give editor time to finish loading
+        // --------------------------------------------------
+
+        logStep(
+            "Waiting for the editor to finish loading."
+        );
+
+        await new Promise(resolve =>
+            setTimeout(resolve, 10000)
+        );
+
+        // --------------------------------------------------
+        // 14. Save resume headline
+        // --------------------------------------------------
+
         logStep("Saving resume headline.");
-        await page.click("form[name='resumeHeadlineForm'] button[type='submit']");
-        logStep("Resume headline save submitted.");
 
-        logStep("Waiting for the profile update response.");
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        logStep("Checking for the profile update popup.");
-        await page.waitForSelector("div.profileEditDrawer.profileUpdatedProLayer .crossLayer .icon", { timeout: 15000 }).catch(() => {
-            logStep("Profile update popup was not found.");
-        });
+        await saveHeadlineButton.click();
 
-        await page.click("div.profileEditDrawer.profileUpdatedProLayer .crossLayer .icon");
+        logStep(
+            "Resume headline save submitted."
+        );
 
-        logStep(`Successfully reached profile page: ${page.url()}`);
-        logStep("Waiting for the profile menu button.");
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        await page.waitForSelector("button[aria-label='Open profile menu']", { timeout: 15000 }).catch(() => {
-            logStep("Profile menu button was not found; OTP/CAPTCHA may be present.");
-        });
-        logStep("Opening profile menu.");
-        await page.click("button[aria-label='Open profile menu']");
-        logStep("Profile menu opened.");
+        // --------------------------------------------------
+        // 15. Wait for profile update popup
+        // --------------------------------------------------
 
-        logStep("Waiting for the logout link.");
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        await page.waitForSelector("a[data-type='logoutLink']", { timeout: 15000 }).catch(() => {
-            logStep("Logout link was not found.");
-        });
-        logStep("Logging out.");
-        await page.click("a[data-type='logoutLink']");
-        logStep("Logout completed.");
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        logStep("Browser going to close.");
+        logStep(
+            "Waiting for profile update popup."
+        );
+
+        const popupCloseSelector =
+            "div.profileEditDrawer.profileUpdatedProLayer .crossLayer .icon";
+
+        const popupCloseButton = await waitForElement(
+            page,
+            popupCloseSelector,
+            10000
+        );
+
+        if (popupCloseButton) {
+
+            logStep(
+                "Profile update popup found."
+            );
+
+            await popupCloseButton.click();
+
+            logStep(
+                "Profile update popup closed."
+            );
+
+        } else {
+
+            logStep(
+                "Profile update popup was not found. Continuing."
+            );
+        }
+
+        // --------------------------------------------------
+        // 16. Profile menu
+        // --------------------------------------------------
+
+        logStep(
+            `Profile update flow completed. Current URL: ${page.url()}`
+        );
+
+        await new Promise(resolve =>
+            setTimeout(resolve, 3000)
+        );
+
+        const profileMenuSelector =
+            "button[aria-label='Open profile menu']";
+
+        logStep(
+            "Waiting for profile menu button."
+        );
+
+        const profileMenuButton = await waitForElement(
+            page,
+            profileMenuSelector,
+            15000
+        );
+
+        if (!profileMenuButton) {
+
+            await saveDebugFiles(
+                page,
+                "naukri-profile-menu-debug"
+            );
+
+            throw new Error(
+                "Profile menu button was not found."
+            );
+        }
+
+        logStep(
+            "Opening profile menu."
+        );
+
+        await profileMenuButton.click();
+
+        logStep(
+            "Profile menu opened."
+        );
+
+        // --------------------------------------------------
+        // 17. Logout
+        // --------------------------------------------------
+
+        await new Promise(resolve =>
+            setTimeout(resolve, 2000)
+        );
+
+        const logoutSelector =
+            "a[data-type='logoutLink']";
+
+        logStep(
+            "Waiting for logout link."
+        );
+
+        const logoutLink = await waitForElement(
+            page,
+            logoutSelector,
+            15000
+        );
+
+        if (!logoutLink) {
+
+            await saveDebugFiles(
+                page,
+                "naukri-logout-debug"
+            );
+
+            throw new Error(
+                "Logout link was not found."
+            );
+        }
+
+        logStep(
+            "Logging out."
+        );
+
+        await logoutLink.click();
+
+        logStep(
+            "Logout completed."
+        );
+
+        await new Promise(resolve =>
+            setTimeout(resolve, 3000)
+        );
+
+        logStep(
+            "Naukri automation completed successfully."
+        );
+
     } catch (error) {
-        logStep("Workflow failed with an error.");
+
+        logStep(
+            "Workflow failed with an error."
+        );
+
         console.error(error);
+
+        // Try to save a final debug screenshot
+        // before closing the browser.
+        if (browser) {
+
+            try {
+
+                const pages = await browser.pages();
+
+                if (pages.length > 0) {
+
+                    await saveDebugFiles(
+                        pages[0],
+                        "naukri-error-debug"
+                    );
+                }
+
+            } catch (debugError) {
+
+                logStep(
+                    `Unable to save final debug files: ${debugError.message}`
+                );
+            }
+        }
+
+        // Re-throw so GitHub Actions marks
+        // the workflow as failed.
+        throw error;
+
     } finally {
-        // Don't close while developing
-        await browser?.close();
-        logStep("Workflow finished. Browser closed.");
+
+        if (browser) {
+
+            await browser.close();
+
+            logStep(
+                "Browser closed."
+            );
+        }
     }
 }
 

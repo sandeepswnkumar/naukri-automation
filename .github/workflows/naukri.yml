@@ -28,3 +28,28 @@ jobs:
           NAUKRI_EMAIL: ${{ secrets.NAUKRI_EMAIL }}
           NAUKRI_PASSWORD: ${{ secrets.NAUKRI_PASSWORD }}
         run: npm start
+      - name: Upload debug files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: naukri-debug
+          path: |
+            naukri-login-debug.png
+            naukri-login-debug.html
+            naukri-error-debug.png
+            naukri-error-debug.html
+            naukri-profile-debug.png
+            naukri-profile-debug.html
+            naukri-email-debug.png  
+            naukri-email-debug.html
+            naukri-password-debug.png
+            naukri-password-debug.html
+            naukri-login-button-debug.png
+            naukri-login-button-debug.html
+            naukri-headline-editor-debug.png
+            naukri-headline-editor-debug.html
+            naukri-profile-menu-debug.png
+            naukri-profile-menu-debug.html
+            naukri-logout-debug.png
+            naukri-logout-debug.html
+        continue-on-error: true
